@@ -18,7 +18,7 @@ def initialize_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS wallets (
             wallet_address VARCHAR(128) PRIMARY KEY,
-            alias VARCHAR(128)
+            alias VARCHAR(128),
         );
         CREATE TABLE IF NOT EXISTS tokens (
             token_address VARCHAR(128) PRIMARY KEY,
@@ -124,3 +124,4 @@ def get_previous_wallet_balance():
 
 if __name__ == "__main__":
     initialize_db()
+

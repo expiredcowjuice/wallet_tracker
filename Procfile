@@ -1,1 +1,1 @@
-worker: python bot_script.py
+worker: python solana_tracker.py
