@@ -124,11 +124,3 @@ def get_previous_wallet_balance():
 
 if __name__ == "__main__":
     initialize_db()
-
-    wallet = '5NW1zCRANLGUY5hTKM5YHbQ2gdqqajbNYZx3hoLXvXbp'
-    wallet_name = 'Phantom 2'
-    token_address = 'mkvXiNBpa8uiSApe5BrhWVJaT87pJFTZxRy7zFapump'
-    token_name = 'Nailong'
-
-    add_wallet(wallet, wallet_name)
-    add_token(token_address, token_name)
