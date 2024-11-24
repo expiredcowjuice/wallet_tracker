@@ -1,1 +1,1 @@
-worker: python solana_tracker.py
+worker: python discord_bot.py
