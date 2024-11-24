@@ -1,8 +1,7 @@
 discord.py
-gql
 aiohttp
-schedule
 psycopg2-binary
 python-dotenv
 pytz
 pandas
+requests
