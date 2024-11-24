@@ -73,8 +73,19 @@ def refresh_state():
     def decorator(func):
         @wraps(func)
         async def wrapper(interaction: discord.Interaction, *args, **kwargs):
-            await initialize()  # Refresh global state before every command
-            return await func(interaction, *args, **kwargs)
+            try:
+                # Defer first
+                await interaction.response.defer()
+                # Then refresh state
+                await initialize()
+                return await func(interaction, *args, **kwargs)
+            except Exception as e:
+                print(f"Error in refresh_state: {str(e)}")
+                try:
+                    await interaction.followup.send(f"An error occurred: {str(e)}")
+                except:
+                    print(f"Failed to send error message")
+                raise
         return wrapper
     return decorator
 
@@ -103,8 +114,6 @@ def validate_addresses():
 @tree.command(name="check_wallet_balances", description="Check all wallet balances")
 @refresh_state()
 async def check_wallet_balances_command(interaction: discord.Interaction):
-    await interaction.response.defer()
-    
     status_message = await interaction.followup.send('Starting wallet balance check...', wait=True)
     
     async def update_status(wallet_name: str):
@@ -174,8 +183,6 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
 @tree.command(name="list_wallets", description="List all wallets")
 @refresh_state()
 async def list_wallets_command(interaction: discord.Interaction):
-    await interaction.response.defer()
-    
     wallets = await list_wallets()
     
     # Create embed
@@ -202,13 +209,11 @@ async def list_wallets_command(interaction: discord.Interaction):
     embed.set_footer(text='Last updated')
     embed.timestamp = datetime.datetime.now()
     
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 @tree.command(name="list_tokens", description="List all tokens")
 @refresh_state()
 async def list_tokens_command(interaction: discord.Interaction):
-    await interaction.response.defer()
-
     tokens = await list_tokens()
     
     # Create embed
@@ -236,7 +241,7 @@ async def list_tokens_command(interaction: discord.Interaction):
     embed.set_footer(text='Last updated')
     embed.timestamp = datetime.datetime.now()
     
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 @tree.command(name="add_wallet", description="Add a wallet")
 @refresh_state()
@@ -249,7 +254,7 @@ async def add_wallet_command(interaction: discord.Interaction, address: str, nam
     # Run the add wallet function
     response = await add_wallets([(address, name)])
     # Send the response
-    await interaction.response.send_message(response)
+    await interaction.followup.send(response)
 
 @tree.command(name="add_token", description="Add a token")
 @refresh_state()
@@ -261,7 +266,7 @@ async def add_token_command(interaction: discord.Interaction, address: str):
     # Run the add token function
     response = await add_tokens([address])
     # Send the response
-    await interaction.response.send_message(response)
+    await interaction.followup.send(response)
 
 @tree.command(name="bulk_add_wallets", description="Bulk add wallets")
 @refresh_state()
