@@ -4,7 +4,7 @@ import pytz
 
 import pandas as pd
 
-from db import upsert_wallet_balances, get_previous_wallet_balance, get_all_wallets, get_all_tokens, upsert_wallets, upsert_tokens
+from db import get_previous_wallet_balance, get_all_wallets, get_all_tokens, upsert_wallets, upsert_tokens, upsert_wallet_balances
 from solana_tracker import get_wallet_balance, get_token_info
 
 
@@ -33,17 +33,17 @@ def format_balance_change(row):
     fields = [
         {
             'name': 'Previous Balance',
-            'value': f'{row["previous_balance"]:.2f}',
+            'value': f'{row["previous_balance"]:,.2f}',
             'inline': True
         },
         {
             'name': 'Current Balance',
-            'value': f'{row["current_balance"]:.2f}',
+            'value': f'{row["current_balance"]:,.2f}',
             'inline': True
         },
         {
             'name': 'Change',
-            'value': f'{direction_emoji} {abs(row["balance_change"]):.2f} (~${abs(row["value_change"]):.2f} USD)',
+            'value': f'{direction_emoji} {abs(row["balance_change"]):,.2f} (~${abs(row["value_change"]):,.2f} USD)',
             'inline': False
         }
     ]
@@ -226,3 +226,44 @@ async def add_tokens(tokens: list[str]):
         response += f'\nSkipped existing tokens: {conflict_list}'
     
     return response
+
+def create_token_summary(changes):
+    """Create a summary of token flows"""
+    token_stats = {}
+    
+    for change in changes:
+        token_addr = change['token_address']
+        token_symbol = get_token_symbol(token_addr)
+        
+        if token_addr not in token_stats:
+            token_stats[token_addr] = {
+                'symbol': token_symbol,
+                'buy_amount': 0,
+                'sell_amount': 0, 
+                'buy_value': 0,
+                'sell_value': 0,
+                'buying_wallets': set(),
+                'selling_wallets': set()
+            }
+        
+        if change['balance_change'] > 0:
+            token_stats[token_addr]['buy_amount'] += change['balance_change']
+            token_stats[token_addr]['buy_value'] += change['value_change']
+            token_stats[token_addr]['buying_wallets'].add(change['wallet_address'])
+        else:
+            token_stats[token_addr]['sell_amount'] += abs(change['balance_change'])
+            token_stats[token_addr]['sell_value'] += abs(change['value_change'])
+            token_stats[token_addr]['selling_wallets'].add(change['wallet_address'])
+    
+    # Format the summary
+    summary_lines = []
+    
+    for stats in token_stats.values():
+        summary = (
+            f"**{stats['symbol']}**\n"
+            f"⬆️ Buys: {stats['buy_amount']:,.2f} (${stats['buy_value']:,.2f}) from {len(stats['buying_wallets'])} wallets\n"
+            f"⬇️ Sells: {stats['sell_amount']:,.2f} (${stats['sell_value']:,.2f}) from {len(stats['selling_wallets'])} wallets\n"
+        )
+        summary_lines.append(summary)
+    
+    return '\n'.join(summary_lines)

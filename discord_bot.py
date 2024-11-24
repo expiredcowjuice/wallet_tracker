@@ -15,7 +15,8 @@ from wallet_tracker import (
     add_wallets, 
     add_tokens,
     initialize,
-    format_balance_change
+    format_balance_change,
+    create_token_summary
 )
 from multiLineModal import MultiLineModal
 
@@ -104,7 +105,6 @@ def validate_addresses():
 async def check_wallet_balances_command(interaction: discord.Interaction):
     await interaction.response.defer()
     
-    # Send initial status message
     status_message = await interaction.followup.send('Starting wallet balance check...', wait=True)
     
     async def update_status(wallet_name: str):
@@ -115,18 +115,16 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
         await status_message.edit(content="No significant balance changes")
         return
 
-    # Function to create embed for a batch of changes
     def create_embed(changes_batch, page=1, total_pages=1):
         embed = discord.Embed(
             title='💰 Wallet Balance Changes',
-            description=f'Recent significant changes in wallet balances (Page {page}/{total_pages})\n(as of {previous_check_time})',
+            description=f'Recent significant changes in wallet balances{f" (Page {page}/{total_pages})" if total_pages > 1 else ""}\n(as of {previous_check_time})',
             timestamp=datetime.datetime.now()
         )
         
         for change in changes_batch:
             title, fields = format_balance_change(change)
-
-            # Add the title and fields
+            
             embed.add_field(
                 name=title,
                 value='\n'.join(
@@ -135,6 +133,20 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
                 ),
                 inline=False
             )
+        
+        embed.set_footer(text='Last updated')
+        return embed
+
+    def create_summary_embed(changes):
+        embed = discord.Embed(
+            title='📊 Token Flow Summary',
+            description='Aggregate changes by token',
+            color=discord.Color.gold(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        summary = create_token_summary(changes)
+        embed.description = summary
         
         embed.set_footer(text='Last updated')
         return embed
@@ -153,6 +165,10 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
     for i, batch in enumerate(batches[1:], 2):
         embed = create_embed(batch, i, total_pages)
         await interaction.followup.send(embed=embed)
+    
+    # Send summary embed as the final message
+    summary_embed = create_summary_embed(changes)
+    await interaction.followup.send(embed=summary_embed)
 
 @tree.command(name="list_wallets", description="List all wallets")
 @refresh_state()
