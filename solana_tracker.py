@@ -12,9 +12,16 @@ API_KEY_1 = os.getenv('SOLANA_TRACKER_API_KEY_1')
 API_KEY_2 = os.getenv('SOLANA_TRACKER_API_KEY_2')
 BASE_URL = 'https://data.solanatracker.io'
 api_key_list = [API_KEY_1, API_KEY_2]
+_current_api_key_index = 0
 
 def get_api_key():
-    return np.random.choice(api_key_list)
+    """
+    Alternates between the two API keys with each call
+    """
+    global _current_api_key_index
+    api_key = api_key_list[_current_api_key_index]
+    _current_api_key_index = (_current_api_key_index + 1) % len(api_key_list)
+    return api_key
 
 async def get_wallet_balance(wallet_address):
     """
@@ -23,7 +30,6 @@ async def get_wallet_balance(wallet_address):
     url = f'{BASE_URL}/wallet/{wallet_address}'
     headers = {'x-api-key': get_api_key()}
     response = requests.get(url, headers=headers).json()
-    print(response)
 
     tokens = response['tokens']
     df = pd.DataFrame(tokens).drop(columns=['pools', 'events', 'risk', 'buys', 'sells', 'txns'])
