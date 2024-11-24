@@ -119,6 +119,7 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
         embed = discord.Embed(
             title='💰 Wallet Balance Changes',
             description=f'Recent significant changes in wallet balances{f" (Page {page}/{total_pages})" if total_pages > 1 else ""}\n(as of {previous_check_time})',
+            color=discord.Color.brand_green(),
             timestamp=datetime.datetime.now()
         )
         
@@ -141,7 +142,7 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
         embed = discord.Embed(
             title='📊 Token Flow Summary',
             description='Aggregate changes by token',
-            color=discord.Color.gold(),
+            color=discord.Color.dark_teal(),
             timestamp=datetime.datetime.now()
         )
         
@@ -173,6 +174,8 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
 @tree.command(name="list_wallets", description="List all wallets")
 @refresh_state()
 async def list_wallets_command(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
     wallets = await list_wallets()
     
     # Create embed
@@ -204,6 +207,8 @@ async def list_wallets_command(interaction: discord.Interaction):
 @tree.command(name="list_tokens", description="List all tokens")
 @refresh_state()
 async def list_tokens_command(interaction: discord.Interaction):
+    await interaction.response.defer()
+
     tokens = await list_tokens()
     
     # Create embed
