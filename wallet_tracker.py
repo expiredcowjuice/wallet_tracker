@@ -121,8 +121,8 @@ async def check_wallet_balances(status_callback=None) -> tuple[list[dict], str]:
         try:
             df = await get_wallet_balance(wallet['wallet_address'])
         except Exception as e:
-            print(f"Error getting wallet balance for {wallet['alias']}: {str(e)}")
-            continue # Issue with dealing with API limits
+            status_callback(f"Error getting wallet balance for {wallet['alias']}: {str(e)}")
+            raise e # Issue with dealing with API limits
 
         # Add missing tokens with 0 balance, captures when a wallet sells out all of a token
         missing_token_balances = pd.DataFrame({'token_address': token_addresses, 'balance': 0, 'value': 0})

@@ -64,7 +64,43 @@ def parse_code_block(content: str) -> list:
             result.append(parts)
     
     return result
+
+def create_embed(changes_batch, previous_check_time=None, page=1, total_pages=1):
+    embed = discord.Embed(
+        title='💰 Wallet Balance Changes',
+        description=f'Recent significant changes in wallet balances{f" (Page {page}/{total_pages})" if total_pages > 1 else ""}\n(as of {previous_check_time if previous_check_time else ""})',
+        color=discord.Color.brand_green(),
+        timestamp=datetime.datetime.now()
+    )
     
+    for change in changes_batch:
+        title, fields = format_balance_change(change)
+        
+        embed.add_field(
+            name=title,
+            value='\n'.join(
+                f"{field['name']}: {field['value']}"
+                for field in fields
+            ),
+            inline=False
+        )
+    
+    embed.set_footer(text='Last updated')
+    return embed
+
+def create_summary_embed(changes):
+    embed = discord.Embed(
+        title='📊 Token Flow Summary',
+        description='Aggregate changes by token',
+        color=discord.Color.dark_teal(),
+        timestamp=datetime.datetime.now()
+    )
+    
+    summary = create_token_summary(changes)
+    embed.description = summary
+    
+    embed.set_footer(text='Last updated')
+    return embed
 
 ########################
 # Decorators
@@ -124,43 +160,6 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
         await status_message.edit(content="No significant balance changes")
         return
 
-    def create_embed(changes_batch, page=1, total_pages=1):
-        embed = discord.Embed(
-            title='💰 Wallet Balance Changes',
-            description=f'Recent significant changes in wallet balances{f" (Page {page}/{total_pages})" if total_pages > 1 else ""}\n(as of {previous_check_time})',
-            color=discord.Color.brand_green(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        for change in changes_batch:
-            title, fields = format_balance_change(change)
-            
-            embed.add_field(
-                name=title,
-                value='\n'.join(
-                    f"{field['name']}: {field['value']}"
-                    for field in fields
-                ),
-                inline=False
-            )
-        
-        embed.set_footer(text='Last updated')
-        return embed
-
-    def create_summary_embed(changes):
-        embed = discord.Embed(
-            title='📊 Token Flow Summary',
-            description='Aggregate changes by token',
-            color=discord.Color.dark_teal(),
-            timestamp=datetime.datetime.now()
-        )
-        
-        summary = create_token_summary(changes)
-        embed.description = summary
-        
-        embed.set_footer(text='Last updated')
-        return embed
-
     # Split changes into batches (20 changes per embed)
     CHANGES_PER_EMBED = 20
     batches = [changes[i:i + CHANGES_PER_EMBED] 
@@ -168,7 +167,7 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
     total_pages = len(batches)
 
     # Send first embed by editing the status message
-    first_embed = create_embed(batches[0], 1, total_pages)
+    first_embed = create_embed(batches[0], previous_check_time, 1, total_pages)
     await status_message.edit(content=None, embed=first_embed)
 
     # Send additional embeds as new messages
