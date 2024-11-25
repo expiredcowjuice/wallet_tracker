@@ -116,12 +116,12 @@ async def check_wallet_balances(status_callback=None) -> tuple[list[dict], str]:
 
     for wallet in wallets:
         if status_callback:
-            await status_callback(wallet['alias'])
+            await status_callback(f'Checking balance for wallet: {wallet["alias"]}...')
             
         try:
             df = await get_wallet_balance(wallet['wallet_address'])
         except Exception as e:
-            status_callback(f"Error getting wallet balance for {wallet['alias']}: {str(e)}")
+            await status_callback(f'Error getting wallet balance for {wallet["alias"]}: {str(e)}')
             raise e # Issue with dealing with API limits
 
         # Add missing tokens with 0 balance, captures when a wallet sells out all of a token

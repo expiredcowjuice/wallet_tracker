@@ -1,47 +1,45 @@
 import os
 import asyncio
-import discord
+import aiohttp
 
-from wallet_tracker import check_wallet_balances
-from discord_bot import create_embed, create_summary_embed
+from dotenv import load_dotenv
+from discord import Webhook
 
+from wallet_tracker import initialize, check_wallet_balances
+from utils import create_embed, create_summary_embed, logger
 
-DISCORD_BOT_TOKEN = os.environ['DISCORD_BOT_TOKEN']
-DISCORD_CHANNEL_ID = int(os.environ['DISCORD_CHANNEL_ID'])
+load_dotenv()
+DISCORD_WEBHOOK_URL = os.environ['DISCORD_WEBHOOK_URL']
 
-async def run_scheduled_task():
-    intents = discord.Intents.default()
-    bot = discord.Client(intents=intents)
+async def run_check_wallet_balances():
+    async with aiohttp.ClientSession() as session:
+        webhook = Webhook.from_url(DISCORD_WEBHOOK_URL, session=session)
+        
+        async def log_status(message: str):
+            logger.info(message)        
 
-    @bot.event
-    async def on_ready():
-        print(f"Logged in as {bot.user}")
-        try:
-            channel = bot.get_channel(DISCORD_CHANNEL_ID)
-            
-            changes, previous_check_time = await check_wallet_balances()
-            if len(changes) == 0:
-                return
-            
-            CHANGES_PER_EMBED = 20
-            batches = [changes[i:i + CHANGES_PER_EMBED] 
-                      for i in range(0, len(changes), CHANGES_PER_EMBED)]
-            total_pages = len(batches)
+        logger.info('Initializing wallet tracker...')
+        await initialize()
 
-            first_embed = create_embed(batches[0], previous_check_time, 1, total_pages)
-            await channel.send(embed=first_embed)
+        logger.info('Checking wallet balances...')
+        changes, previous_check_time = await check_wallet_balances(status_callback=log_status)
+        
+        logger.info('Sending wallet balance changes...')
+        if len(changes) == 0:
+            await webhook.send(content='No significant balance changes')
+            return
+        
+        CHANGES_PER_EMBED = 20
+        batches = [changes[i:i + CHANGES_PER_EMBED] 
+                    for i in range(0, len(changes), CHANGES_PER_EMBED)]
+        
+        for page, batch in enumerate(batches, 1):
+            embed = create_embed(batch, previous_check_time if page == 1 else None, page, len(batches))
+            await webhook.send(embed=embed)
+        
+        summary_embed = create_summary_embed(changes)
+        await webhook.send(embed=summary_embed)
+        
 
-            for i, batch in enumerate(batches[1:], 2):
-                embed = create_embed(batch, previous_check_time, i, total_pages)
-                await channel.send(embed=embed)
-
-            summary_embed = create_summary_embed(changes)
-            await channel.send(embed=summary_embed)
-
-        finally:
-            await bot.close()
-
-    await bot.start(DISCORD_BOT_TOKEN)
-
-# Run the async function
-asyncio.run(run_scheduled_task())
+if __name__ == '__main__':
+    asyncio.run(run_check_wallet_balances())

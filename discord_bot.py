@@ -15,8 +15,10 @@ from wallet_tracker import (
     add_wallets, 
     add_tokens,
     initialize,
-    format_balance_change,
-    create_token_summary
+)
+from utils import (
+    create_embed,
+    create_summary_embed,
 )
 from multiLineModal import MultiLineModal
 
@@ -65,42 +67,6 @@ def parse_code_block(content: str) -> list:
     
     return result
 
-def create_embed(changes_batch, previous_check_time=None, page=1, total_pages=1):
-    embed = discord.Embed(
-        title='💰 Wallet Balance Changes',
-        description=f'Recent significant changes in wallet balances{f" (Page {page}/{total_pages})" if total_pages > 1 else ""}\n(as of {previous_check_time if previous_check_time else ""})',
-        color=discord.Color.brand_green(),
-        timestamp=datetime.datetime.now()
-    )
-    
-    for change in changes_batch:
-        title, fields = format_balance_change(change)
-        
-        embed.add_field(
-            name=title,
-            value='\n'.join(
-                f"{field['name']}: {field['value']}"
-                for field in fields
-            ),
-            inline=False
-        )
-    
-    embed.set_footer(text='Last updated')
-    return embed
-
-def create_summary_embed(changes):
-    embed = discord.Embed(
-        title='📊 Token Flow Summary',
-        description='Aggregate changes by token',
-        color=discord.Color.dark_teal(),
-        timestamp=datetime.datetime.now()
-    )
-    
-    summary = create_token_summary(changes)
-    embed.description = summary
-    
-    embed.set_footer(text='Last updated')
-    return embed
 
 ########################
 # Decorators
@@ -152,15 +118,14 @@ def validate_addresses():
 async def check_wallet_balances_command(interaction: discord.Interaction):
     status_message = await interaction.followup.send('Starting wallet balance check...', wait=True)
     
-    async def update_status(wallet_name: str):
-        await status_message.edit(content=f'Checking balance for wallet: {wallet_name}...')
+    async def update_status(message: str):
+        await status_message.edit(content=message)
     
     changes, previous_check_time = await check_wallet_balances(status_callback=update_status)
     if len(changes) == 0:
         await status_message.edit(content="No significant balance changes")
         return
 
-    # Split changes into batches (20 changes per embed)
     CHANGES_PER_EMBED = 20
     batches = [changes[i:i + CHANGES_PER_EMBED] 
               for i in range(0, len(changes), CHANGES_PER_EMBED)]
@@ -169,10 +134,10 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
     # Send first embed by editing the status message
     first_embed = create_embed(batches[0], previous_check_time, 1, total_pages)
     await status_message.edit(content=None, embed=first_embed)
-
+    
     # Send additional embeds as new messages
-    for i, batch in enumerate(batches[1:], 2):
-        embed = create_embed(batch, i, total_pages)
+    for page, batch in enumerate(batches[1:], 2):
+        embed = create_embed(batch, previous_check_time if page == 1 else None, page, total_pages)
         await interaction.followup.send(embed=embed)
     
     # Send summary embed as the final message
