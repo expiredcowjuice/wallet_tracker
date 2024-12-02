@@ -2,7 +2,6 @@ import os
 import requests
 
 from dotenv import load_dotenv
-import numpy as np
 import pandas as pd
 
 
@@ -54,3 +53,26 @@ async def get_token_info(token_address):
         token['name'],
         token['symbol'],
     )
+
+async def get_wallet_trades(wallet_address):
+    """
+    Get the trades of a wallet
+    """
+    url = f'{BASE_URL}/wallet/{wallet_address}/trades'
+    headers = {'x-api-key': get_api_key()}
+    response = requests.get(url, headers=headers).json()
+
+    trades = response['trades']
+    df = pd.DataFrame(trades).drop(columns=['wallet'])
+    df = df.assign(
+        from_token=df['from'].apply(lambda x: x.get('token', {}).get('symbol')),
+        to_token=df['to'].apply(lambda x: x.get('token', {}).get('symbol')),
+        price=df['price'].apply(lambda x: x['usd']),
+        volume=df['volume'].apply(lambda x: x['usd']),
+        timestamp=pd.to_datetime(df['time'], unit='ms')
+    )
+    df.rename(columns={'tx': 'tx_hash'}, inplace=True)
+    df.drop(columns=['from', 'to', 'time'], inplace=True)
+    df.dropna(inplace=True)
+
+    return df

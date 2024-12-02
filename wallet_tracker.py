@@ -4,11 +4,11 @@ import pytz
 
 import pandas as pd
 
-from db import get_previous_wallet_balance, get_all_wallets, get_all_tokens, upsert_wallets, upsert_tokens, upsert_wallet_balances
-from solana_tracker import get_wallet_balance, get_token_info
+from db import get_previous_wallet_balance, get_all_wallets, get_all_tokens, upsert_wallets, upsert_tokens, upsert_wallet_balances, upsert_wallet_trades, get_previous_wallet_trades
+from solana_tracker import get_wallet_balance, get_token_info, get_wallet_trades
 
 
-# Move these into an async initialization function
+TRADE_WALLET_ALIASES = ['Phantom', 'BonkBot', 'Bloom']
 tokens = []
 wallets = []
 
@@ -16,15 +16,15 @@ wallets = []
 # Helper Functions
 ########################
 
-def format_balance_change(row):
+def format_balance_change(change):
     """
     Format balance changes for embed
-    Returns a tuple of (title, fields)
+    Returns a tuple of (name, fields)
     """
-    token_symbol = get_token_symbol(row['token_address'])
-    wallet_alias = get_wallet_alias(row['wallet_address'])
+    token_symbol = get_token_symbol(change['token_address'])
+    wallet_alias = get_wallet_alias(change['wallet_address'])
     
-    is_increase = row['balance_change'] > 0
+    is_increase = change['balance_change'] > 0
     direction_emoji = "⬆️" if is_increase else "⬇️"
     color_emoji = "🟢" if is_increase else "🔴"
     
@@ -33,22 +33,83 @@ def format_balance_change(row):
     fields = [
         {
             'name': 'Previous Balance',
-            'value': f'{row["previous_balance"]:,.2f}',
-            'inline': True
+            'value': f'{change["previous_balance"]:,.2f}',
         },
         {
             'name': 'Current Balance',
-            'value': f'{row["current_balance"]:,.2f}',
-            'inline': True
+            'value': f'{change["current_balance"]:,.2f}',
         },
         {
             'name': 'Change',
-            'value': f'{direction_emoji} {abs(row["balance_change"]):,.2f} (~${abs(row["value_change"]):,.2f} USD)',
-            'inline': False
+            'value': f'{direction_emoji} {abs(change["balance_change"]):,.2f} (~${abs(change["value_change"]):,.2f} USD)',
         }
     ]
     
     return title, fields
+
+def create_token_summary(changes):
+    """Create a summary of token flows"""
+    token_stats = {}
+    
+    for change in changes:
+        token_addr = change['token_address']
+        token_symbol = get_token_symbol(token_addr)
+        
+        if token_addr not in token_stats:
+            token_stats[token_addr] = {
+                'symbol': token_symbol,
+                'buy_amount': 0,
+                'sell_amount': 0, 
+                'buy_value': 0,
+                'sell_value': 0,
+                'buying_wallets': set(),
+                'selling_wallets': set()
+            }
+        
+        if change['balance_change'] > 0:
+            token_stats[token_addr]['buy_amount'] += change['balance_change']
+            token_stats[token_addr]['buy_value'] += change['value_change']
+            token_stats[token_addr]['buying_wallets'].add(change['wallet_address'])
+        else:
+            token_stats[token_addr]['sell_amount'] += abs(change['balance_change'])
+            token_stats[token_addr]['sell_value'] += abs(change['value_change'])
+            token_stats[token_addr]['selling_wallets'].add(change['wallet_address'])
+    
+    # Format the summary
+    summary_lines = []
+    
+    for stats in token_stats.values():
+        summary = (
+            f"**{stats['symbol']}**\n"
+            f"⬆️ Buys: {stats['buy_amount']:,.2f} (${stats['buy_value']:,.2f}) from {len(stats['buying_wallets'])} wallets\n"
+            f"⬇️ Sells: {stats['sell_amount']:,.2f} (${stats['sell_value']:,.2f}) from {len(stats['selling_wallets'])} wallets\n"
+        )
+        summary_lines.append(summary)
+    
+    return '\n'.join(summary_lines)
+
+def format_trades(trade):
+    """
+    Format trades for embed
+    Returns a tuple of (name, fields)
+    """
+    name = f"{trade['from_token']} ➡️ {trade['to_token']}"
+    fields = [
+        {
+            'name': 'Price (USD)',
+            'value': f'${trade["price"]:,.10f}',
+        },
+        {
+            'name': 'Volume (USD)',
+            'value': f'${trade["volume"]:,.2f}',
+        },
+        {
+            'name': 'Time',
+            'value': f'{format_datetime(trade["timestamp"])}',
+        }
+    ]
+    
+    return name, fields
 
 def format_address(address):
     """
@@ -64,11 +125,11 @@ def ensure_list(item):
 
 def format_datetime(utc_time: datetime) -> str:
     """
-    Format a UTC datetime object to local time
+    Format a UTC datetime object to Sydney time
     """
-    local_tz = datetime.now().astimezone().tzinfo  # Get local timezone
-    local_time = utc_time.replace(tzinfo=pytz.UTC).astimezone(local_tz)
-    return local_time.strftime('%Y-%m-%d %H:%M %Z')
+    sydney_tz = pytz.timezone('Australia/Sydney')
+    sydney_time = utc_time.replace(tzinfo=pytz.UTC).astimezone(sydney_tz)
+    return sydney_time.strftime('%Y-%m-%d %H:%M %Z')
 
 ########################
 # Wallet Tracker Functions
@@ -115,6 +176,10 @@ async def check_wallet_balances(status_callback=None) -> tuple[list[dict], str]:
     token_addresses = [token['token_address'] for token in tokens]
 
     for wallet in wallets:
+        # Skip trade wallets
+        if any(alias in wallet['alias'] for alias in TRADE_WALLET_ALIASES):
+            continue
+        
         if status_callback:
             await status_callback(f'Checking balance for wallet: {wallet["alias"]}...')
             
@@ -139,7 +204,9 @@ async def check_wallet_balances(status_callback=None) -> tuple[list[dict], str]:
 
     # Get previous wallet balances
     previous_wallet_balances = pd.DataFrame(await get_previous_wallet_balance())
+
     previous_wallet_balances = previous_wallet_balances[previous_wallet_balances['token_address'].isin(token_addresses)]
+    previous_wallet_balances = previous_wallet_balances[previous_wallet_balances['wallet_address'].isin(current_wallet_balances['wallet_address'].unique())]
 
     # Compare current and previous balances
     current_wallet_balances = current_wallet_balances.sort_values(['wallet_address', 'token_address']).reset_index(drop=True)
@@ -231,43 +298,37 @@ async def add_tokens(tokens: list[str]):
     
     return response
 
-def create_token_summary(changes):
-    """Create a summary of token flows"""
-    token_stats = {}
+async def check_trades(status_callback=None):
+    """
+    Check the trades of wallets, currently only one's personal wallets to prevent spam.
+    Personal wallets are defined by the WALLET_ALIASES list.
+    e.g. Phantom 1, Phantom 2, etc will be checked.
+    """
+    trade_wallets = [wallet for wallet in wallets if any(alias in wallet['alias'] for alias in TRADE_WALLET_ALIASES)]
+    trades = pd.DataFrame()
+
+    for wallet in trade_wallets:
+        if status_callback:
+            await status_callback(f'Checking trades for wallet: {wallet["alias"]}...')
+        df = await get_wallet_trades(wallet['wallet_address'])
+        df = df.assign(wallet_address=wallet['wallet_address'])
+
+        trades = pd.concat([trades, df])
     
-    for change in changes:
-        token_addr = change['token_address']
-        token_symbol = get_token_symbol(token_addr)
-        
-        if token_addr not in token_stats:
-            token_stats[token_addr] = {
-                'symbol': token_symbol,
-                'buy_amount': 0,
-                'sell_amount': 0, 
-                'buy_value': 0,
-                'sell_value': 0,
-                'buying_wallets': set(),
-                'selling_wallets': set()
-            }
-        
-        if change['balance_change'] > 0:
-            token_stats[token_addr]['buy_amount'] += change['balance_change']
-            token_stats[token_addr]['buy_value'] += change['value_change']
-            token_stats[token_addr]['buying_wallets'].add(change['wallet_address'])
-        else:
-            token_stats[token_addr]['sell_amount'] += abs(change['balance_change'])
-            token_stats[token_addr]['sell_value'] += abs(change['value_change'])
-            token_stats[token_addr]['selling_wallets'].add(change['wallet_address'])
-    
-    # Format the summary
-    summary_lines = []
-    
-    for stats in token_stats.values():
-        summary = (
-            f"**{stats['symbol']}**\n"
-            f"⬆️ Buys: {stats['buy_amount']:,.2f} (${stats['buy_value']:,.2f}) from {len(stats['buying_wallets'])} wallets\n"
-            f"⬇️ Sells: {stats['sell_amount']:,.2f} (${stats['sell_value']:,.2f}) from {len(stats['selling_wallets'])} wallets\n"
-        )
-        summary_lines.append(summary)
-    
-    return '\n'.join(summary_lines)
+    previous_trades = pd.DataFrame(await get_previous_wallet_trades())
+
+    # Update trades in db
+    new_trades = trades[~trades['tx_hash'].isin(previous_trades['tx_hash'])]
+
+    if len(new_trades) > 0:
+        await upsert_wallet_trades(list(zip(
+            new_trades['tx_hash'],
+            new_trades['wallet_address'],
+            new_trades['from_token'],
+            new_trades['to_token'],
+            new_trades['price'],
+            new_trades['volume'],
+            new_trades['timestamp']
+        )))
+
+    return new_trades.to_dict(orient='records')

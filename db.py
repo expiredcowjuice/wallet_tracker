@@ -18,7 +18,7 @@ def initialize_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS wallets (
             wallet_address VARCHAR(128) PRIMARY KEY,
-            alias VARCHAR(128),
+            alias VARCHAR(128)
         );
         CREATE TABLE IF NOT EXISTS tokens (
             token_address VARCHAR(128) PRIMARY KEY,
@@ -32,6 +32,15 @@ def initialize_db():
             balance NUMERIC NOT NULL,
             value NUMERIC NOT NULL,
             PRIMARY KEY (wallet_address, token_address, timestamp)
+        );
+        CREATE TABLE IF NOT EXISTS wallet_trades (
+            tx_hash VARCHAR(128) PRIMARY KEY,
+            wallet_address VARCHAR(128) REFERENCES wallets(wallet_address),
+            from_token VARCHAR(32),
+            to_token VARCHAR(32),
+            price NUMERIC NOT NULL,
+            volume NUMERIC NOT NULL,
+            timestamp TIMESTAMP NOT NULL
         );
     """)
     conn.commit()
@@ -118,6 +127,21 @@ async def upsert_wallet_balances(wallet_balances):
     cursor.close()
     conn.close()
 
+async def upsert_wallet_trades(wallet_trades):
+    """
+    Upsert wallet trades
+    wallet_trades: list of tuples (tx_hash, wallet_address, from_token, to_token, price, volume, timestamp)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    execute_values(cursor, """
+        INSERT INTO wallet_trades (tx_hash, wallet_address, from_token, to_token, price, volume, timestamp)
+        VALUES %s
+    """, wallet_trades)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 async def get_all_wallets():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -168,6 +192,17 @@ async def get_previous_wallet_balance():
             ) as value
         FROM wallets w
         CROSS JOIN tokens t
+    """)
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return results
+
+async def get_previous_wallet_trades():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("""
+        SELECT * FROM wallet_trades;
     """)
     results = cursor.fetchall()
     cursor.close()

@@ -137,7 +137,7 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
     
     # Send additional embeds as new messages
     for page, batch in enumerate(batches[1:], 2):
-        embed = create_embed(batch, previous_check_time if page == 1 else None, page, total_pages)
+        embed = create_embed(batch, None, page, total_pages)
         await interaction.followup.send(embed=embed)
     
     # Send summary embed as the final message
