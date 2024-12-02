@@ -17,8 +17,8 @@ from wallet_tracker import (
     initialize,
 )
 from utils import (
-    create_embed,
-    create_summary_embed,
+    create_wallet_balance_change_embed,
+    create_token_flow_summary_embed,
 )
 from multiLineModal import MultiLineModal
 
@@ -132,16 +132,16 @@ async def check_wallet_balances_command(interaction: discord.Interaction):
     total_pages = len(batches)
 
     # Send first embed by editing the status message
-    first_embed = create_embed(batches[0], previous_check_time, 1, total_pages)
+    first_embed = create_wallet_balance_change_embed(batches[0], previous_check_time, 1, total_pages)
     await status_message.edit(content=None, embed=first_embed)
     
     # Send additional embeds as new messages
     for page, batch in enumerate(batches[1:], 2):
-        embed = create_embed(batch, None, page, total_pages)
+        embed = create_wallet_balance_change_embed(batch, None, page, total_pages)
         await interaction.followup.send(embed=embed)
     
     # Send summary embed as the final message
-    summary_embed = create_summary_embed(changes)
+    summary_embed = create_token_flow_summary_embed(changes)
     await interaction.followup.send(embed=summary_embed)
 
 @tree.command(name="list_wallets", description="List all wallets")
